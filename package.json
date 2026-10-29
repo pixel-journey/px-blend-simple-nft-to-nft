@@ -1,0 +1,14 @@
+{
+  "name": "px-blend-simple-nft-to-nft",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Educational lab: simple NFT-to-NFT blend craft gate",
+  "scripts": {
+    "test": "node --experimental-strip-types --test invariants/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

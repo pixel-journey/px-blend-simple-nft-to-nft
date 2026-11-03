@@ -6,6 +6,8 @@ const recipe = {
   id: "pebble-to-rock",
   requires: [1001, 1001, 1002],
   outputsTemplateId: 2000,
+  outputCollection: "examplecol",
+  outputSchema: "examplesch",
   inputDisposition: "burn" as const,
 };
 
@@ -21,21 +23,35 @@ function ings(
   }));
 }
 
+const goodIngs = () =>
+  ings([
+    { id: 1n, templateId: 1001 },
+    { id: 2n, templateId: 1001 },
+    { id: 3n, templateId: 1002 },
+  ]);
+
 describe("craft", () => {
   it("accepts exact multiset and owner", () => {
-    const r = craft(
-      recipe,
-      ings([
-        { id: 1n, templateId: 1001 },
-        { id: 2n, templateId: 1001 },
-        { id: 3n, templateId: 1002 },
-      ]),
-      alice
-    );
+    const r = craft(recipe, goodIngs(), alice);
     assert.equal(r.ok, true);
     assert.equal(r.mintTemplateId, 2000);
     assert.equal(r.consumedAssetIds.length, 3);
     assert.equal(r.disposition, "burn");
+  });
+
+  it("returns an unsent mintasset with no asset id", () => {
+    const r = craft(recipe, goodIngs(), alice);
+    assert.equal(r.mint.sent, false);
+    assert.equal(r.mint.account, "atomicassets");
+    assert.equal(r.mint.name, "mintasset");
+    assert.equal(r.mint.data.authorized_minter, alice);
+    assert.equal(r.mint.data.collection_name, "examplecol");
+    assert.equal(r.mint.data.schema_name, "examplesch");
+    assert.equal(r.mint.data.template_id, 2000);
+    assert.equal(r.mint.data.new_asset_owner, alice);
+    assert.equal("asset_id" in r.mint.data, false);
+    assert.deepEqual(r.mint.data.immutable_data, []);
+    assert.deepEqual(r.mint.data.tokens_to_back, []);
   });
 
   it("returns unsent burn bodies for each consumed asset", () => {
@@ -58,6 +74,7 @@ describe("craft", () => {
     assert.equal(r.burns?.every((b) => b.name === "burnasset"), true);
     assert.equal(r.burns?.every((b) => b.data.asset_owner === alice), true);
     assert.equal(r.burns?.every((b) => b.account === "atomicassets"), true);
+    assert.equal(r.mint.sent, false);
   });
 
   it("returns an unsent treasury transfer when disposition is treasury", () => {
@@ -67,11 +84,7 @@ describe("craft", () => {
         inputDisposition: "treasury",
         treasury: "treas.pxj",
       },
-      ings([
-        { id: 1n, templateId: 1001 },
-        { id: 2n, templateId: 1001 },
-        { id: 3n, templateId: 1002 },
-      ]),
+      goodIngs(),
       alice
     );
     assert.equal(r.disposition, "treasury");
@@ -82,6 +95,15 @@ describe("craft", () => {
     assert.equal(r.treasuryTransfer?.data.to, "treas.pxj");
     assert.deepEqual(r.treasuryTransfer?.data.asset_ids, ["1", "2", "3"]);
     assert.equal(r.treasuryTransfer?.data.memo, "blend:pebble-to-rock");
+    assert.equal(r.mint.sent, false);
+    assert.equal(r.mint.data.template_id, 2000);
+  });
+
+  it("refuses a bad output collection name before mint", () => {
+    assert.throws(
+      () => craft({ ...recipe, outputCollection: ".bad" }, goodIngs(), alice),
+      /bad account name/
+    );
   });
 
   it("refuses treasury disposition without a treasury account", () => {
@@ -89,11 +111,7 @@ describe("craft", () => {
       () =>
         craft(
           { ...recipe, inputDisposition: "treasury" },
-          ings([
-            { id: 1n, templateId: 1001 },
-            { id: 2n, templateId: 1001 },
-            { id: 3n, templateId: 1002 },
-          ]),
+          goodIngs(),
           alice
         ),
       /missing treasury/
@@ -105,11 +123,7 @@ describe("craft", () => {
       () =>
         craft(
           { ...recipe, inputDisposition: "treasury", treasury: alice },
-          ings([
-            { id: 1n, templateId: 1001 },
-            { id: 2n, templateId: 1001 },
-            { id: 3n, templateId: 1002 },
-          ]),
+          goodIngs(),
           alice
         ),
       /treasury is the user/

@@ -4,103 +4,48 @@
 > **Quest:** 046 — simple NFT→NFT blend  
 > **Vault:** [px-contract-examples-vault](https://github.com/pixel-journey/px-contract-examples-vault)
 
-**One-sentence goal:** Teach a **template-exact** craft gate: the caller owns every ingredient, the template multiset matches, then the function returns a **mint intent** plus **unsent** burn or treasury transfer bodies for the inputs. It does not mint.
+**One-sentence goal:** Teach a **template-exact** craft gate: the caller owns every ingredient, the template multiset matches, then the function returns an **unsent mintasset** plus **unsent** burn or treasury transfer bodies for the inputs. It does not mint.
 
 **Real code:** `npm test`. **No** AtomicAssets call, **no** wasm, **no** custody transfer.
 
-## What you can learn
-
-- Why a recipe is a **multiset** of template ids (counts matter, order does not).
-- Why ownership is checked on every ingredient, not only the first.
-- Why the same asset id cannot be listed twice to fake a second template.
-- Why this lab returns unsent action bodies instead of claiming a burn or mint.
-
-## What is actually in the repo
-
-| Piece | Role |
-| --- | --- |
-| `invariants/blend.ts` | `craft` — name checks, owner, multiset, mint intent, unsent input actions |
-| `invariants/blend.test.ts` | Executed claims |
-| `EDUCATION.md` | The four-step pattern |
-| `SECURITY.md` | What production still has to do |
-
 ## What is true (executed)
 
-Sample recipe `pebble-to-rock` requires templates `[1001, 1001, 1002]` and outputs template `2000` with disposition `burn`.
+Sample recipe `pebble-to-rock` requires templates `[1001, 1001, 1002]` and outputs template `2000` in collection `examplecol` / schema `examplesch` with disposition `burn`.
 
 | Rule | Result |
 | --- | --- |
 | Exact templates + caller owns all three | `ok`, `mintTemplateId` 2000, three consumed ids, disposition `burn` |
+| Output | one unsent `atomicassets::mintasset` with no asset id, `sent: false` |
 | Burn disposition | three unsent `atomicassets::burnasset` bodies, ordered by asset id, `sent: false` |
 | Treasury disposition | one unsent `atomicassets::transfer` to `recipe.treasury`, `sent: false` |
+| Bad output collection or schema name | refused before any action body |
 | Treasury missing or equal to caller | refused before any action body |
 | One ingredient owned by someone else | `not owner of ingredient` |
 | A template id that is not in the recipe | `template mismatch` |
 | The same asset id listed twice | `duplicate asset` |
 
-Order of the three ingredients does not matter. Count does. Two `1001` and one `1002` matches. Three `1001` does not.
+`examplecol`, `examplesch`, and `treas.pxj` are example names, not a live claim. Issued supply is not incremented.
 
 ## The rule, in order
 
 `craft(recipe, ingredients, caller)`:
 
-1. Caller and every owner must be an Antelope name (`a-z`, `1-5`, `.`, length 1–12, no leading or trailing dot).
-2. Recipe id is non-empty and at most 32 characters. Disposition is `burn` or `treasury`. Output template id is an integer ≥ 1.
+1. Caller and every owner must be an Antelope name.
+2. Recipe id, disposition, output template, collection, and schema are validated.
 3. Ingredient count must equal `recipe.requires.length`.
 4. Each `assetId` is a `bigint` ≥ 1 and appears once.
 5. Every ingredient owner equals `caller`.
-6. Template counts match exactly (multiset). A wrong id or a wrong count throws `template mismatch`.
-7. On success the return is an intent: consumed ids, disposition, `mintTemplateId`, and `minter` (the caller). For `burn`, one unsent `burnasset` per id with `asset_owner` = caller. For `treasury`, one unsent transfer of all ids to `recipe.treasury`. Nothing is burned, transferred, or minted.
-
-```ts
-import { craft } from "./invariants/blend.ts";
-
-const result = craft(
-  {
-    id: "pebble-to-rock",
-    requires: [1001, 1001, 1002],
-    outputsTemplateId: 2000,
-    inputDisposition: "burn",
-  },
-  [
-    { assetId: 1n, templateId: 1001, owner: "alice" },
-    { assetId: 2n, templateId: 1002, owner: "alice" },
-    { assetId: 3n, templateId: 1001, owner: "alice" },
-  ],
-  "alice"
-);
-// result.mintTemplateId === 2000; result.burns.every(b => b.sent === false)
-```
-
-## Edge cases
-
-- Ingredient count shorter or longer than `requires` throws before the multiset compare.
-- Template ids below 1 throw `bad template id`.
-- A non-bigint or non-positive asset id throws `bad asset id`.
-- `burn` and `treasury` produce action bodies with `sent: false`. Neither moves an NFT in this file.
-- Account names that fail the charset are rejected. That is a format check, not a proof the account exists.
-
-## Best practice and the opposite
-
-**Do** match templates by count, not by array order.  
-**Do** refuse a duplicate asset id even when both rows name the same template.  
-**Do** keep the mint as a separate step the contract actually authorizes.  
-**Do** keep burn and treasury transfer unsent until the contract signs them.
-
-**Do not** treat `ok: true` as an AtomicAssets mint.  
-**Do not** treat `burns[0].sent === false` as a completed burn.  
-**Do not** let the client pick the output template independently of the recipe. The output id comes from the recipe object.
+6. Template counts match exactly (multiset).
+7. On success: unsent `mintasset` for the output; for `burn`, unsent `burnasset` per id; for `treasury`, unsent transfer of all ids. Nothing is burned, transferred, or minted.
 
 ## Live path, not shipped
 
 ```
 owned assets + recipe
-    → craft() intent + unsent input actions   [tested]
-    → signed burn or treasury transfer        [not in this repo]
-    → atomic mint of outputsTemplateId        [not in this repo]
+    → craft() unsent mint + input actions   [tested]
+    → signed burn or treasury transfer      [not in this repo]
+    → signed mint of outputsTemplateId      [not in this repo]
 ```
-
-Production still needs real custody transfer or burn, an atomic mint, and notify ordering that cannot re-enter the craft. See [SECURITY.md](SECURITY.md).
 
 ## Related
 

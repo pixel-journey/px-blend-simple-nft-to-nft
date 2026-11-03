@@ -1,7 +1,7 @@
 /**
  * Simple NFT→NFT blend (educational).
  * Template-exact ingredients; owner must match; inputs burned or sent to treasury.
- * Does not mint on-chain — returns an unsigned mint intent and unsent input actions.
+ * Does not mint on-chain — returns an unsent mintasset body and unsent input actions.
  */
 
 export type Ingredient = {
@@ -16,6 +16,8 @@ export type Recipe = {
   requires: readonly number[];
   /** Output template to mint */
   outputsTemplateId: number;
+  outputCollection: string;
+  outputSchema: string;
   /** burn = destroy inputs; treasury = move to treasury account */
   inputDisposition: "burn" | "treasury";
   /** Required when inputDisposition is treasury. Example name only. */
@@ -43,6 +45,23 @@ export type UnsignedTransfer = {
   sent: false;
 };
 
+export type UnsignedMint = {
+  account: "atomicassets";
+  name: "mintasset";
+  authorization: { actor: string; permission: "active" }[];
+  data: {
+    authorized_minter: string;
+    collection_name: string;
+    schema_name: string;
+    template_id: number;
+    new_asset_owner: string;
+    immutable_data: [];
+    mutable_data: [];
+    tokens_to_back: [];
+  };
+  sent: false;
+};
+
 export type CraftOk = {
   ok: true;
   recipeId: string;
@@ -50,6 +69,8 @@ export type CraftOk = {
   disposition: "burn" | "treasury";
   mintTemplateId: number;
   minter: string;
+  /** Unsent mint body. Issued supply is not incremented. */
+  mint: UnsignedMint;
   /** Present when disposition is burn. None of these is sent. */
   burns: UnsignedBurn[] | null;
   /** Present when disposition is treasury. Not sent. */
@@ -84,7 +105,7 @@ function mapsEqual(a: Map<number, number>, b: Map<number, number>): boolean {
 
 /**
  * Validate craft: caller owns every ingredient; templates match recipe multiset exactly.
- * Returns unsent burn or treasury-transfer bodies for the inputs. Does not mint.
+ * Returns unsent mint, burn, or treasury-transfer bodies. Does not mint or burn on-chain.
  */
 export function craft(
   recipe: Recipe,
@@ -99,6 +120,8 @@ export function craft(
   if (!Number.isInteger(recipe.outputsTemplateId) || recipe.outputsTemplateId < 1) {
     throw new Error("bad output template");
   }
+  assertName(recipe.outputCollection);
+  assertName(recipe.outputSchema);
   if (ingredients.length !== recipe.requires.length) {
     throw new Error("ingredient count mismatch");
   }
@@ -152,6 +175,23 @@ export function craft(
     };
   }
 
+  const mint: UnsignedMint = {
+    account: "atomicassets",
+    name: "mintasset",
+    authorization: [{ actor: caller, permission: "active" }],
+    data: {
+      authorized_minter: caller,
+      collection_name: recipe.outputCollection,
+      schema_name: recipe.outputSchema,
+      template_id: recipe.outputsTemplateId,
+      new_asset_owner: caller,
+      immutable_data: [],
+      mutable_data: [],
+      tokens_to_back: [],
+    },
+    sent: false,
+  };
+
   return {
     ok: true,
     recipeId: recipe.id,
@@ -159,6 +199,7 @@ export function craft(
     disposition: recipe.inputDisposition,
     mintTemplateId: recipe.outputsTemplateId,
     minter: caller,
+    mint,
     burns,
     treasuryTransfer,
   };

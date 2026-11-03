@@ -1,7 +1,7 @@
 /**
  * Simple NFT→NFT blend (educational).
  * Template-exact ingredients; owner must match; inputs burned or sent to treasury.
- * Does not mint on-chain — returns an unsigned mint intent.
+ * Does not mint on-chain — returns an unsigned mint intent and unsent input actions.
  */
 
 export type Ingredient = {
@@ -18,6 +18,29 @@ export type Recipe = {
   outputsTemplateId: number;
   /** burn = destroy inputs; treasury = move to treasury account */
   inputDisposition: "burn" | "treasury";
+  /** Required when inputDisposition is treasury. Example name only. */
+  treasury?: string;
+};
+
+export type UnsignedBurn = {
+  account: "atomicassets";
+  name: "burnasset";
+  authorization: { actor: string; permission: "active" }[];
+  data: { asset_owner: string; asset_id: string };
+  sent: false;
+};
+
+export type UnsignedTransfer = {
+  account: "atomicassets";
+  name: "transfer";
+  authorization: { actor: string; permission: "active" }[];
+  data: {
+    from: string;
+    to: string;
+    asset_ids: string[];
+    memo: string;
+  };
+  sent: false;
 };
 
 export type CraftOk = {
@@ -27,6 +50,10 @@ export type CraftOk = {
   disposition: "burn" | "treasury";
   mintTemplateId: number;
   minter: string;
+  /** Present when disposition is burn. None of these is sent. */
+  burns: UnsignedBurn[] | null;
+  /** Present when disposition is treasury. Not sent. */
+  treasuryTransfer: UnsignedTransfer | null;
 };
 
 const NAME = /^[a-z1-5.]{1,12}$/;
@@ -57,6 +84,7 @@ function mapsEqual(a: Map<number, number>, b: Map<number, number>): boolean {
 
 /**
  * Validate craft: caller owns every ingredient; templates match recipe multiset exactly.
+ * Returns unsent burn or treasury-transfer bodies for the inputs. Does not mint.
  */
 export function craft(
   recipe: Recipe,
@@ -91,12 +119,47 @@ export function craft(
   const have = countTemplates(ingredients.map((i) => i.templateId));
   if (!mapsEqual(need, have)) throw new Error("template mismatch");
 
+  const consumedAssetIds = ingredients.map((i) => i.assetId);
+  // Stable order by asset id so the action list is deterministic.
+  const ordered = [...consumedAssetIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  let burns: UnsignedBurn[] | null = null;
+  let treasuryTransfer: UnsignedTransfer | null = null;
+
+  if (recipe.inputDisposition === "burn") {
+    burns = ordered.map((id) => ({
+      account: "atomicassets",
+      name: "burnasset",
+      authorization: [{ actor: caller, permission: "active" }],
+      data: { asset_owner: caller, asset_id: id.toString() },
+      sent: false,
+    }));
+  } else {
+    if (!recipe.treasury) throw new Error("missing treasury");
+    assertName(recipe.treasury);
+    if (recipe.treasury === caller) throw new Error("treasury is the user");
+    treasuryTransfer = {
+      account: "atomicassets",
+      name: "transfer",
+      authorization: [{ actor: caller, permission: "active" }],
+      data: {
+        from: caller,
+        to: recipe.treasury,
+        asset_ids: ordered.map((id) => id.toString()),
+        memo: `blend:${recipe.id}`,
+      },
+      sent: false,
+    };
+  }
+
   return {
     ok: true,
     recipeId: recipe.id,
-    consumedAssetIds: ingredients.map((i) => i.assetId),
+    consumedAssetIds,
     disposition: recipe.inputDisposition,
     mintTemplateId: recipe.outputsTemplateId,
     minter: caller,
+    burns,
+    treasuryTransfer,
   };
 }

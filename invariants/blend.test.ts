@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { craft } from "./blend.ts";
+import { craft, type ChainCollection } from "./blend.ts";
 
 const recipe = {
   id: "pebble-to-rock",
@@ -12,6 +12,17 @@ const recipe = {
 };
 
 const alice = "alice";
+
+const collection = (
+  authorized: string[] = [alice],
+  author = "authorname",
+  collection_name = "examplecol",
+): ChainCollection => ({
+  source: "chain",
+  collection_name,
+  author,
+  authorized_accounts: authorized,
+});
 
 function ings(
   specs: { id: bigint; templateId: number; owner?: string }[]
@@ -32,7 +43,7 @@ const goodIngs = () =>
 
 describe("craft", () => {
   it("accepts exact multiset and owner", () => {
-    const r = craft(recipe, goodIngs(), alice);
+    const r = craft(recipe, goodIngs(), alice, collection());
     assert.equal(r.ok, true);
     assert.equal(r.mintTemplateId, 2000);
     assert.equal(r.consumedAssetIds.length, 3);
@@ -40,7 +51,7 @@ describe("craft", () => {
   });
 
   it("returns an unsent mintasset with no asset id", () => {
-    const r = craft(recipe, goodIngs(), alice);
+    const r = craft(recipe, goodIngs(), alice, collection());
     assert.equal(r.mint.sent, false);
     assert.equal(r.mint.account, "atomicassets");
     assert.equal(r.mint.name, "mintasset");
@@ -62,7 +73,8 @@ describe("craft", () => {
         { id: 1n, templateId: 1001 },
         { id: 2n, templateId: 1001 },
       ]),
-      alice
+      alice,
+      collection()
     );
     assert.equal(r.burns?.length, 3);
     assert.equal(r.treasuryTransfer, null);
@@ -85,7 +97,8 @@ describe("craft", () => {
         treasury: "treas.pxj",
       },
       goodIngs(),
-      alice
+      alice,
+      collection()
     );
     assert.equal(r.disposition, "treasury");
     assert.equal(r.burns, null);
@@ -99,9 +112,33 @@ describe("craft", () => {
     assert.equal(r.mint.data.template_id, 2000);
   });
 
+  it("accepts the collection author as minter", () => {
+    const r = craft(recipe, goodIngs(), alice, collection([], alice));
+    assert.equal(r.mint.sent, false);
+    assert.equal(r.minter, alice);
+  });
+
+  it("refuses a missing collection row before any action body", () => {
+    assert.throws(() => craft(recipe, goodIngs(), alice, null), /not chain sourced/);
+  });
+
+  it("refuses a caller that is not author and not authorized", () => {
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse")),
+      /not a minter/
+    );
+  });
+
+  it("refuses a collection name that disagrees with the recipe", () => {
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection([alice], "authorname", "othercol")),
+      /wrong collection/
+    );
+  });
+
   it("refuses a bad output collection name before mint", () => {
     assert.throws(
-      () => craft({ ...recipe, outputCollection: ".bad" }, goodIngs(), alice),
+      () => craft({ ...recipe, outputCollection: ".bad" }, goodIngs(), alice, collection()),
       /bad account name/
     );
   });
@@ -112,7 +149,8 @@ describe("craft", () => {
         craft(
           { ...recipe, inputDisposition: "treasury" },
           goodIngs(),
-          alice
+          alice,
+          collection()
         ),
       /missing treasury/
     );
@@ -124,7 +162,8 @@ describe("craft", () => {
         craft(
           { ...recipe, inputDisposition: "treasury", treasury: alice },
           goodIngs(),
-          alice
+          alice,
+          collection()
         ),
       /treasury is the user/
     );
@@ -140,7 +179,8 @@ describe("craft", () => {
             { id: 2n, templateId: 1001, owner: "bob" },
             { id: 3n, templateId: 1002 },
           ]),
-          alice
+          alice,
+          collection()
         ),
       /not owner/
     );
@@ -156,7 +196,8 @@ describe("craft", () => {
             { id: 2n, templateId: 1001 },
             { id: 3n, templateId: 9999 },
           ]),
-          alice
+          alice,
+          collection()
         ),
       /template mismatch/
     );
@@ -172,7 +213,8 @@ describe("craft", () => {
             { id: 1n, templateId: 1001 },
             { id: 3n, templateId: 1002 },
           ]),
-          alice
+          alice,
+          collection()
         ),
       /duplicate/
     );

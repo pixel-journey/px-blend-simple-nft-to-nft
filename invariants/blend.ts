@@ -2,6 +2,7 @@
  * Simple NFT→NFT blend (educational).
  * Template-exact ingredients; owner must match; inputs burned or sent to treasury.
  * Does not mint on-chain — returns an unsent mintasset body and unsent input actions.
+ * Minter rights come from a chain collection row, not from the client alone.
  */
 
 export type Ingredient = {
@@ -22,6 +23,14 @@ export type Recipe = {
   inputDisposition: "burn" | "treasury";
   /** Required when inputDisposition is treasury. Example name only. */
   treasury?: string;
+};
+
+/** A row the contract would have read from atomicassets::collections. Not a node call. */
+export type ChainCollection = {
+  source: "chain";
+  collection_name: string;
+  author: string;
+  authorized_accounts: string[];
 };
 
 export type UnsignedBurn = {
@@ -103,14 +112,32 @@ function mapsEqual(a: Map<number, number>, b: Map<number, number>): boolean {
   return true;
 }
 
+/** Caller must be author or listed. Omitting the row is not a row. */
+function assertMinter(
+  collection: ChainCollection | null,
+  recipe: Recipe,
+  caller: string,
+): void {
+  if (!collection || collection.source !== "chain") throw new Error("not chain sourced");
+  assertName(collection.collection_name);
+  assertName(collection.author);
+  if (collection.collection_name !== recipe.outputCollection) throw new Error("wrong collection");
+  for (const account of collection.authorized_accounts) assertName(account);
+  if (collection.author !== caller && !collection.authorized_accounts.includes(caller)) {
+    throw new Error("not a minter");
+  }
+}
+
 /**
  * Validate craft: caller owns every ingredient; templates match recipe multiset exactly.
- * Returns unsent mint, burn, or treasury-transfer bodies. Does not mint or burn on-chain.
+ * Minter rights require a chain collection row. Returns unsent mint/burn/treasury bodies.
+ * Does not mint or burn on-chain.
  */
 export function craft(
   recipe: Recipe,
   ingredients: readonly Ingredient[],
-  caller: string
+  caller: string,
+  collection: ChainCollection | null,
 ): CraftOk {
   assertName(caller);
   if (!recipe.id || recipe.id.length > 32) throw new Error("bad recipe id");
@@ -141,6 +168,8 @@ export function craft(
   const need = countTemplates(recipe.requires);
   const have = countTemplates(ingredients.map((i) => i.templateId));
   if (!mapsEqual(need, have)) throw new Error("template mismatch");
+
+  assertMinter(collection, recipe, caller);
 
   const consumedAssetIds = ingredients.map((i) => i.assetId);
   // Stable order by asset id so the action list is deterministic.

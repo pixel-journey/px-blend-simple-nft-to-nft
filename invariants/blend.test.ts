@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { craft, type ChainCollection } from "./blend.ts";
+import { craft, type ChainCollection, type ChainTemplate } from "./blend.ts";
 
 const recipe = {
   id: "pebble-to-rock",
@@ -24,6 +24,19 @@ const collection = (
   authorized_accounts: authorized,
 });
 
+const outputTemplate = (
+  overrides: Partial<ChainTemplate> = {},
+): ChainTemplate => ({
+  source: "chain",
+  collection_name: "examplecol",
+  schema_name: "examplesch",
+  template_id: 2000,
+  burnable: true,
+  max_supply: 0,
+  issued_supply: 0,
+  ...overrides,
+});
+
 function ings(
   specs: { id: bigint; templateId: number; owner?: string }[]
 ) {
@@ -41,9 +54,12 @@ const goodIngs = () =>
     { id: 3n, templateId: 1002 },
   ]);
 
+const good = () =>
+  craft(recipe, goodIngs(), alice, collection(), outputTemplate());
+
 describe("craft", () => {
   it("accepts exact multiset and owner", () => {
-    const r = craft(recipe, goodIngs(), alice, collection());
+    const r = good();
     assert.equal(r.ok, true);
     assert.equal(r.mintTemplateId, 2000);
     assert.equal(r.consumedAssetIds.length, 3);
@@ -51,7 +67,7 @@ describe("craft", () => {
   });
 
   it("returns an unsent mintasset with no asset id", () => {
-    const r = craft(recipe, goodIngs(), alice, collection());
+    const r = good();
     assert.equal(r.mint.sent, false);
     assert.equal(r.mint.account, "atomicassets");
     assert.equal(r.mint.name, "mintasset");
@@ -74,7 +90,8 @@ describe("craft", () => {
         { id: 2n, templateId: 1001 },
       ]),
       alice,
-      collection()
+      collection(),
+      outputTemplate()
     );
     assert.equal(r.burns?.length, 3);
     assert.equal(r.treasuryTransfer, null);
@@ -98,7 +115,8 @@ describe("craft", () => {
       },
       goodIngs(),
       alice,
-      collection()
+      collection(),
+      outputTemplate()
     );
     assert.equal(r.disposition, "treasury");
     assert.equal(r.burns, null);
@@ -113,32 +131,109 @@ describe("craft", () => {
   });
 
   it("accepts the collection author as minter", () => {
-    const r = craft(recipe, goodIngs(), alice, collection([], alice));
+    const r = craft(recipe, goodIngs(), alice, collection([], alice), outputTemplate());
     assert.equal(r.mint.sent, false);
     assert.equal(r.minter, alice);
   });
 
+  it("accepts a capped template with remaining supply", () => {
+    const r = craft(
+      recipe,
+      goodIngs(),
+      alice,
+      collection(),
+      outputTemplate({ max_supply: 10, issued_supply: 9 })
+    );
+    assert.equal(r.mint.sent, false);
+  });
+
   it("refuses a missing collection row before any action body", () => {
-    assert.throws(() => craft(recipe, goodIngs(), alice, null), /not chain sourced/);
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, null, outputTemplate()),
+      /not chain sourced/
+    );
+  });
+
+  it("refuses a missing output template row before any action body", () => {
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection(), null),
+      /not chain sourced/
+    );
   });
 
   it("refuses a caller that is not author and not authorized", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse")),
+      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse"), outputTemplate()),
       /not a minter/
     );
   });
 
   it("refuses a collection name that disagrees with the recipe", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection([alice], "authorname", "othercol")),
+      () =>
+        craft(
+          recipe,
+          goodIngs(),
+          alice,
+          collection([alice], "authorname", "othercol"),
+          outputTemplate()
+        ),
       /wrong collection/
+    );
+  });
+
+  it("refuses an output template id that disagrees with the recipe", () => {
+    assert.throws(
+      () =>
+        craft(
+          recipe,
+          goodIngs(),
+          alice,
+          collection(),
+          outputTemplate({ template_id: 9999 })
+        ),
+      /template mismatch/
+    );
+  });
+
+  it("refuses an output template with the wrong schema", () => {
+    assert.throws(
+      () =>
+        craft(
+          recipe,
+          goodIngs(),
+          alice,
+          collection(),
+          outputTemplate({ schema_name: "wrongsch" })
+        ),
+      /wrong schema/
+    );
+  });
+
+  it("refuses a full output template", () => {
+    assert.throws(
+      () =>
+        craft(
+          recipe,
+          goodIngs(),
+          alice,
+          collection(),
+          outputTemplate({ max_supply: 5, issued_supply: 5 })
+        ),
+      /template full/
     );
   });
 
   it("refuses a bad output collection name before mint", () => {
     assert.throws(
-      () => craft({ ...recipe, outputCollection: ".bad" }, goodIngs(), alice, collection()),
+      () =>
+        craft(
+          { ...recipe, outputCollection: ".bad" },
+          goodIngs(),
+          alice,
+          collection(),
+          outputTemplate()
+        ),
       /bad account name/
     );
   });
@@ -150,7 +245,8 @@ describe("craft", () => {
           { ...recipe, inputDisposition: "treasury" },
           goodIngs(),
           alice,
-          collection()
+          collection(),
+          outputTemplate()
         ),
       /missing treasury/
     );
@@ -163,7 +259,8 @@ describe("craft", () => {
           { ...recipe, inputDisposition: "treasury", treasury: alice },
           goodIngs(),
           alice,
-          collection()
+          collection(),
+          outputTemplate()
         ),
       /treasury is the user/
     );
@@ -180,7 +277,8 @@ describe("craft", () => {
             { id: 3n, templateId: 1002 },
           ]),
           alice,
-          collection()
+          collection(),
+          outputTemplate()
         ),
       /not owner/
     );
@@ -197,7 +295,8 @@ describe("craft", () => {
             { id: 3n, templateId: 9999 },
           ]),
           alice,
-          collection()
+          collection(),
+          outputTemplate()
         ),
       /template mismatch/
     );
@@ -214,7 +313,8 @@ describe("craft", () => {
             { id: 3n, templateId: 1002 },
           ]),
           alice,
-          collection()
+          collection(),
+          outputTemplate()
         ),
       /duplicate/
     );

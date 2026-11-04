@@ -2,7 +2,7 @@
  * Simple NFT→NFT blend (educational).
  * Template-exact ingredients; owner must match; inputs burned or sent to treasury.
  * Does not mint on-chain — returns an unsent mintasset body and unsent input actions.
- * Minter rights come from a chain collection row, not from the client alone.
+ * Minter rights and output template supply come from chain rows, not from the client alone.
  */
 
 export type Ingredient = {
@@ -31,6 +31,17 @@ export type ChainCollection = {
   collection_name: string;
   author: string;
   authorized_accounts: string[];
+};
+
+/** A row the contract would have read from the collection's templates table. max_supply 0 means no cap. */
+export type ChainTemplate = {
+  source: "chain";
+  collection_name: string;
+  schema_name: string;
+  template_id: number;
+  burnable: boolean;
+  max_supply: number;
+  issued_supply: number;
 };
 
 export type UnsignedBurn = {
@@ -129,15 +140,39 @@ function assertMinter(
 }
 
 /**
+ * Output template must exist, match recipe collection/schema/id, and have supply room.
+ * max_supply 0 means unlimited. Issued supply is not written here.
+ */
+function assertOutputTemplate(
+  template: ChainTemplate | null,
+  recipe: Recipe,
+): void {
+  if (!template || template.source !== "chain") throw new Error("not chain sourced");
+  assertName(template.collection_name);
+  assertName(template.schema_name);
+  if (template.collection_name !== recipe.outputCollection) throw new Error("wrong collection");
+  if (template.schema_name !== recipe.outputSchema) throw new Error("wrong schema");
+  if (!Number.isInteger(template.template_id) || template.template_id !== recipe.outputsTemplateId) {
+    throw new Error("template mismatch");
+  }
+  if (!Number.isInteger(template.max_supply) || template.max_supply < 0) throw new Error("bad template");
+  if (!Number.isInteger(template.issued_supply) || template.issued_supply < 0) throw new Error("bad template");
+  if (template.max_supply !== 0 && template.issued_supply >= template.max_supply) {
+    throw new Error("template full");
+  }
+}
+
+/**
  * Validate craft: caller owns every ingredient; templates match recipe multiset exactly.
- * Minter rights require a chain collection row. Returns unsent mint/burn/treasury bodies.
- * Does not mint or burn on-chain.
+ * Minter rights and output template supply require chain rows. Returns unsent mint/burn/treasury bodies.
+ * Does not mint or burn on-chain. Issued supply is not incremented.
  */
 export function craft(
   recipe: Recipe,
   ingredients: readonly Ingredient[],
   caller: string,
   collection: ChainCollection | null,
+  template: ChainTemplate | null,
 ): CraftOk {
   assertName(caller);
   if (!recipe.id || recipe.id.length > 32) throw new Error("bad recipe id");
@@ -170,6 +205,7 @@ export function craft(
   if (!mapsEqual(need, have)) throw new Error("template mismatch");
 
   assertMinter(collection, recipe, caller);
+  assertOutputTemplate(template, recipe);
 
   const consumedAssetIds = ingredients.map((i) => i.assetId);
   // Stable order by asset id so the action list is deterministic.

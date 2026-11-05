@@ -110,6 +110,8 @@ export type CraftOk = {
 
 const NAME = /^[a-z1-5.]{1,12}$/;
 const UINT64_MAX = 18446744073709551615n;
+/** Same lab bound as hybrid NFT notify/withdraw batches. */
+const MAX_INGREDIENTS = 20;
 
 export function assertName(name: string): string {
   if (!NAME.test(name) || name.startsWith(".") || name.endsWith(".")) {
@@ -252,6 +254,9 @@ export function craft(
   assertName(recipe.outputCollection);
   assertName(recipe.outputSchema);
   if (recipe.requires.length === 0) throw new Error("empty recipe");
+  if (recipe.requires.length > MAX_INGREDIENTS || ingredients.length > MAX_INGREDIENTS) {
+    throw new Error("bad asset batch");
+  }
   if (ingredients.length !== recipe.requires.length) {
     throw new Error("ingredient count mismatch");
   }

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { craft, type ChainCollection, type ChainTemplate } from "./blend.ts";
+import { craft, type ChainAsset, type ChainCollection, type ChainTemplate } from "./blend.ts";
 
 const recipe = {
   id: "pebble-to-rock",
@@ -67,8 +67,20 @@ const goodIngs = () =>
     { id: 3n, templateId: 1002 },
   ]);
 
+
+const chainAssets = (
+  list: { assetId: bigint; templateId: number; owner: string }[] = goodIngs(),
+): ChainAsset[] =>
+  list.map((ing) => ({
+    source: "chain" as const,
+    id: ing.assetId,
+    owner: ing.owner,
+    collection_name: "ingcol",
+    template_id: ing.templateId,
+  }));
+
 const good = () =>
-  craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows());
+  craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), chainAssets());
 
 describe("craft", () => {
   it("accepts exact multiset and owner", () => {
@@ -98,7 +110,8 @@ describe("craft", () => {
       alice,
       collection(),
       outputTemplate(),
-      burnableRows()
+      burnableRows(),
+      chainAssets()
     );
     assert.equal(r.burns?.length, 3);
     assert.equal(r.treasuryTransfer, null);
@@ -114,7 +127,8 @@ describe("craft", () => {
       alice,
       collection(),
       outputTemplate(),
-      null
+      null,
+      chainAssets()
     );
     assert.equal(r.disposition, "treasury");
     assert.equal(r.burns, null);
@@ -124,7 +138,7 @@ describe("craft", () => {
   });
 
   it("accepts the collection author as minter", () => {
-    const r = craft(recipe, goodIngs(), alice, collection([], alice), outputTemplate(), burnableRows());
+    const r = craft(recipe, goodIngs(), alice, collection([], alice), outputTemplate(), burnableRows(), chainAssets());
     assert.equal(r.minter, alice);
   });
 
@@ -135,28 +149,29 @@ describe("craft", () => {
       alice,
       collection(),
       outputTemplate({ max_supply: 10, issued_supply: 9 }),
-      burnableRows()
+      burnableRows(),
+      chainAssets()
     );
     assert.equal(r.mint.sent, false);
   });
 
   it("refuses a missing collection row before any action body", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, null, outputTemplate(), burnableRows()),
+      () => craft(recipe, goodIngs(), alice, null, outputTemplate(), burnableRows(), chainAssets()),
       /not chain sourced/
     );
   });
 
   it("refuses a missing output template row before any action body", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection(), null, burnableRows()),
+      () => craft(recipe, goodIngs(), alice, collection(), null, burnableRows(), chainAssets()),
       /not chain sourced/
     );
   });
 
   it("refuses burn disposition without ingredient template rows", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), null),
+      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), null, chainAssets()),
       /not chain sourced/
     );
   });
@@ -170,7 +185,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          [ingredientRow(1001, false), ingredientRow(1002)]
+          [ingredientRow(1001, false), ingredientRow(1002)],
+          chainAssets()
         ),
       /not burnable/
     );
@@ -185,7 +201,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          [ingredientRow(1001, true, "othercol"), ingredientRow(1002)]
+          [ingredientRow(1001, true, "othercol"), ingredientRow(1002)],
+          chainAssets()
         ),
       /wrong collection/
     );
@@ -194,14 +211,14 @@ describe("craft", () => {
   it("refuses a partial ingredient template set", () => {
     assert.throws(
       () =>
-        craft(recipe, goodIngs(), alice, collection(), outputTemplate(), [ingredientRow(1001)]),
+        craft(recipe, goodIngs(), alice, collection(), outputTemplate(), [ingredientRow(1001)], chainAssets()),
       /not chain sourced/
     );
   });
 
   it("refuses a caller that is not author and not authorized", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse"), outputTemplate(), burnableRows()),
+      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse"), outputTemplate(), burnableRows(), chainAssets()),
       /not a minter/
     );
   });
@@ -215,7 +232,7 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate({ template_id: 9999 }),
-          burnableRows()
+          burnableRows(), chainAssets()
         ),
       /template mismatch/
     );
@@ -230,7 +247,7 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate({ schema_name: "wrongsch" }),
-          burnableRows()
+          burnableRows(), chainAssets()
         ),
       /wrong schema/
     );
@@ -245,7 +262,7 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate({ max_supply: 5, issued_supply: 5 }),
-          burnableRows()
+          burnableRows(), chainAssets()
         ),
       /template full/
     );
@@ -260,7 +277,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          null
+          null,
+          chainAssets()
         ),
       /missing treasury/
     );
@@ -275,7 +293,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          null
+          null,
+          chainAssets()
         ),
       /treasury is the user/
     );
@@ -294,7 +313,7 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          burnableRows()
+          burnableRows(), chainAssets()
         ),
       /not owner/
     );
@@ -313,7 +332,7 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          burnableRows()
+          burnableRows(), chainAssets()
         ),
       /template mismatch/
     );
@@ -332,9 +351,60 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          burnableRows()
+          burnableRows(), chainAssets()
         ),
       /duplicate/
     );
   });
+
+  it("refuses a missing chain asset list before any action body", () => {
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), null),
+      /not chain sourced/
+    );
+  });
+
+  it("refuses a chain asset owned by someone else", () => {
+    const rows = chainAssets();
+    rows[0] = { ...rows[0], owner: "bob" };
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), rows),
+      /not the owner/
+    );
+  });
+
+  it("refuses a chain asset from the wrong collection", () => {
+    const rows = chainAssets();
+    rows[0] = { ...rows[0], collection_name: "othercol" };
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), rows),
+      /wrong collection/
+    );
+  });
+
+  it("refuses a chain asset whose template disagrees with the claim", () => {
+    const rows = chainAssets();
+    rows[0] = { ...rows[0], template_id: 1002 };
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), rows),
+      /template mismatch/
+    );
+  });
+
+  it("refuses a chain asset list that drops an ingredient", () => {
+    assert.throws(
+      () =>
+        craft(
+          recipe,
+          goodIngs(),
+          alice,
+          collection(),
+          outputTemplate(),
+          burnableRows(),
+          chainAssets().slice(0, 2)
+        ),
+      /not chain sourced/
+    );
+  });
+
 });

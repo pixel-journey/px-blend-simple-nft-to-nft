@@ -2,7 +2,8 @@
  * Simple NFT→NFT blend (educational).
  * Template-exact ingredients; owner must match; inputs burned or sent to treasury.
  * Does not mint on-chain — returns an unsent mintasset body and unsent input actions.
- * Minter rights, output supply, and burnable ingredient templates come from chain rows.
+ * Minter rights, output supply, burnable ingredient templates, and ingredient
+ * ownership come from chain rows, not from the client field alone.
  */
 
 export type Ingredient = {
@@ -24,6 +25,15 @@ export type Recipe = {
   inputDisposition: "burn" | "treasury";
   /** Required when inputDisposition is treasury. Example name only. */
   treasury?: string;
+};
+
+/** A row the contract would have read from atomicassets::assets. Not a node call. */
+export type ChainAsset = {
+  source: "chain";
+  id: bigint;
+  owner: string;
+  collection_name: string;
+  template_id: number;
 };
 
 /** A row the contract would have read from atomicassets::collections. Not a node call. */
@@ -185,7 +195,39 @@ function assertBurnable(recipe: Recipe, rows: readonly ChainTemplate[] | null): 
 }
 
 /**
- * Validate craft. Minter, output supply, and (for burn) ingredient burnable rows are required.
+ * One chain asset row per ingredient. The client owner field is not proof.
+ * Row owner, collection, and template must agree with the caller and the claim.
+ */
+function assertAssets(
+  recipe: Recipe,
+  ingredients: readonly Ingredient[],
+  caller: string,
+  rows: readonly ChainAsset[] | null,
+): void {
+  if (rows === null) throw new Error("not chain sourced");
+  if (rows.length !== ingredients.length) throw new Error("not chain sourced");
+  const byId = new Map<string, ChainAsset>();
+  for (const row of rows) {
+    if (!row || row.source !== "chain") throw new Error("not chain sourced");
+    if (typeof row.id !== "bigint" || row.id < 1n) throw new Error("bad asset id");
+    const key = row.id.toString();
+    if (byId.has(key)) throw new Error("duplicate asset");
+    byId.set(key, row);
+  }
+  for (const ing of ingredients) {
+    const row = byId.get(ing.assetId.toString());
+    if (!row) throw new Error("missing asset");
+    assertName(row.owner);
+    assertName(row.collection_name);
+    if (row.owner !== caller) throw new Error("not the owner");
+    if (row.collection_name !== recipe.ingredientCollection) throw new Error("wrong collection");
+    if (!Number.isInteger(row.template_id) || row.template_id < 1) throw new Error("bad template id");
+    if (row.template_id !== ing.templateId) throw new Error("template mismatch");
+  }
+}
+
+/**
+ * Validate craft. Minter, output supply, chain asset rows, and (for burn) burnable rows are required.
  * Returns unsent mint/burn/treasury bodies. Does not mint or burn on-chain.
  */
 export function craft(
@@ -195,6 +237,7 @@ export function craft(
   collection: ChainCollection | null,
   template: ChainTemplate | null,
   ingredientTemplates: readonly ChainTemplate[] | null,
+  assets: readonly ChainAsset[] | null,
 ): CraftOk {
   assertName(caller);
   if (!recipe.id || recipe.id.length > 32) throw new Error("bad recipe id");
@@ -227,6 +270,7 @@ export function craft(
   const have = countTemplates(ingredients.map((i) => i.templateId));
   if (!mapsEqual(need, have)) throw new Error("template mismatch");
 
+  assertAssets(recipe, ingredients, caller, assets);
   assertMinter(collection, recipe, caller);
   assertOutputTemplate(template, recipe);
   if (recipe.inputDisposition === "burn") assertBurnable(recipe, ingredientTemplates);

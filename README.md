@@ -17,6 +17,7 @@
 | Chain `owner` is not the caller | `not the owner` |
 | Chain collection or template disagrees with the claim | refused |
 | Client `owner` field alone | not proof; still checked, but the chain row decides |
+| `requires` is empty | `empty recipe` before any action body, even with no ingredients |
 | Burn disposition without burnable ingredient rows | `not chain sourced` |
 | Treasury disposition | unsent transfer; burnable rows are not required |
 

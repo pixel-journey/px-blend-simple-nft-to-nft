@@ -250,6 +250,7 @@ export function craft(
   assertName(recipe.ingredientCollection);
   assertName(recipe.outputCollection);
   assertName(recipe.outputSchema);
+  if (recipe.requires.length === 0) throw new Error("empty recipe");
   if (ingredients.length !== recipe.requires.length) {
     throw new Error("ingredient count mismatch");
   }

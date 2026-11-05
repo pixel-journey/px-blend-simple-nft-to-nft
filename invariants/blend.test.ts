@@ -357,6 +357,22 @@ describe("craft", () => {
     );
   });
 
+  it("refuses an empty recipe before any action body", () => {
+    assert.throws(
+      () =>
+        craft(
+          { ...recipe, requires: [] },
+          [],
+          alice,
+          collection(),
+          outputTemplate(),
+          [],
+          []
+        ),
+      /empty recipe/
+    );
+  });
+
   it("refuses a missing chain asset list before any action body", () => {
     assert.throws(
       () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), null),

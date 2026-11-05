@@ -18,6 +18,8 @@
 | Chain collection or template disagrees with the claim | refused |
 | Client `owner` field alone | not proof; still checked, but the chain row decides |
 | `requires` is empty | `empty recipe` before any action body, even with no ingredients |
+| Asset id above 2^64−1, on the claim or the chain row | `bad asset id` before any action body |
+| Asset id equal to 2^64−1 | accepted |
 | Burn disposition without burnable ingredient rows | `not chain sourced` |
 | Treasury disposition | unsent transfer; burnable rows are not required |
 

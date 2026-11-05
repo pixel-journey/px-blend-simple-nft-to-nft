@@ -373,6 +373,70 @@ describe("craft", () => {
     );
   });
 
+  it("accepts an asset id at the uint64 maximum", () => {
+    const id = 18446744073709551615n;
+    const one = {
+      ...recipe,
+      requires: [1001],
+    };
+    const ingredients = ings([{ id, templateId: 1001 }]);
+    const r = craft(
+      one,
+      ingredients,
+      alice,
+      collection(),
+      outputTemplate(),
+      [ingredientRow(1001)],
+      chainAssets(ingredients)
+    );
+    assert.equal(r.mint.sent, false);
+    assert.equal(r.burns?.[0].data.asset_id, id.toString());
+  });
+
+  it("refuses an asset id above uint64 before any action body", () => {
+    const id = 18446744073709551616n;
+    assert.throws(
+      () =>
+        craft(
+          { ...recipe, requires: [1001] },
+          ings([{ id, templateId: 1001 }]),
+          alice,
+          collection(),
+          outputTemplate(),
+          [ingredientRow(1001)],
+          [
+            {
+              source: "chain",
+              id,
+              owner: alice,
+              collection_name: "ingcol",
+              template_id: 1001,
+            },
+          ]
+        ),
+      /bad asset id/
+    );
+  });
+
+  it("refuses a chain asset id above uint64 before any action body", () => {
+    const ingredients = ings([{ id: 1n, templateId: 1001 }]);
+    const rows = chainAssets(ingredients);
+    rows[0] = { ...rows[0], id: 18446744073709551616n };
+    assert.throws(
+      () =>
+        craft(
+          { ...recipe, requires: [1001] },
+          ingredients,
+          alice,
+          collection(),
+          outputTemplate(),
+          [ingredientRow(1001)],
+          rows
+        ),
+      /bad asset id/
+    );
+  });
+
   it("refuses a missing chain asset list before any action body", () => {
     assert.throws(
       () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows(), null),

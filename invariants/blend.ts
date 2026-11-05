@@ -109,6 +109,7 @@ export type CraftOk = {
 };
 
 const NAME = /^[a-z1-5.]{1,12}$/;
+const UINT64_MAX = 18446744073709551615n;
 
 export function assertName(name: string): string {
   if (!NAME.test(name) || name.startsWith(".") || name.endsWith(".")) {
@@ -209,7 +210,7 @@ function assertAssets(
   const byId = new Map<string, ChainAsset>();
   for (const row of rows) {
     if (!row || row.source !== "chain") throw new Error("not chain sourced");
-    if (typeof row.id !== "bigint" || row.id < 1n) throw new Error("bad asset id");
+    if (typeof row.id !== "bigint" || row.id < 1n || row.id > UINT64_MAX) throw new Error("bad asset id");
     const key = row.id.toString();
     if (byId.has(key)) throw new Error("duplicate asset");
     byId.set(key, row);
@@ -257,7 +258,7 @@ export function craft(
 
   const seen = new Set<string>();
   for (const ing of ingredients) {
-    if (typeof ing.assetId !== "bigint" || ing.assetId < 1n) {
+    if (typeof ing.assetId !== "bigint" || ing.assetId < 1n || ing.assetId > UINT64_MAX) {
       throw new Error("bad asset id");
     }
     const key = ing.assetId.toString();

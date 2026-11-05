@@ -106,6 +106,11 @@ export type CraftOk = {
   burns: UnsignedBurn[] | null;
   /** Present when disposition is treasury. Not sent. */
   treasuryTransfer: UnsignedTransfer | null;
+  /**
+   * Ordered unsent plan: input disposition first (burns or one treasury transfer),
+   * then mint last. All sent: false. Issued supply is not incremented.
+   */
+  actions: Array<UnsignedBurn | UnsignedTransfer | UnsignedMint>;
 };
 
 const NAME = /^[a-z1-5.]{1,12}$/;
@@ -231,7 +236,7 @@ function assertAssets(
 
 /**
  * Validate craft. Minter, output supply, chain asset rows, and (for burn) burnable rows are required.
- * Returns unsent mint/burn/treasury bodies. Does not mint or burn on-chain.
+ * Returns unsent mint/burn/treasury bodies in an ordered actions plan. Does not mint or burn on-chain.
  */
 export function craft(
   recipe: Recipe,
@@ -331,6 +336,12 @@ export function craft(
     sent: false,
   };
 
+  const actions: Array<UnsignedBurn | UnsignedTransfer | UnsignedMint> = [
+    ...(burns ?? []),
+    ...(treasuryTransfer ? [treasuryTransfer] : []),
+    mint,
+  ];
+
   return {
     ok: true,
     recipeId: recipe.id,
@@ -341,5 +352,6 @@ export function craft(
     mint,
     burns,
     treasuryTransfer,
+    actions,
   };
 }

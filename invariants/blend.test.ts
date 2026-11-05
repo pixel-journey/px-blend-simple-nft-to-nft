@@ -529,4 +529,33 @@ describe("craft", () => {
       /bad asset batch/
     );
   });
+
+  it("orders burns before mint in actions", () => {
+    const r = good();
+    assert.equal(r.actions.length, 4);
+    assert.equal(r.actions.every((a) => a.sent === false), true);
+    assert.equal(r.actions[0].name, "burnasset");
+    assert.equal(r.actions[1].name, "burnasset");
+    assert.equal(r.actions[2].name, "burnasset");
+    assert.equal(r.actions[3].name, "mintasset");
+    assert.equal(r.actions[3], r.mint);
+  });
+
+  it("orders treasury transfer before mint in actions", () => {
+    const r = craft(
+      { ...recipe, inputDisposition: "treasury", treasury: "treas.pxj" },
+      goodIngs(),
+      alice,
+      collection(),
+      outputTemplate(),
+      null,
+      chainAssets()
+    );
+    assert.equal(r.actions.length, 2);
+    assert.equal(r.actions[0].name, "transfer");
+    assert.equal(r.actions[1].name, "mintasset");
+    assert.equal(r.actions[0], r.treasuryTransfer);
+    assert.equal(r.actions[1], r.mint);
+    assert.equal(r.actions.every((a) => a.sent === false), true);
+  });
 });

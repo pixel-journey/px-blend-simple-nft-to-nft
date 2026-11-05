@@ -20,6 +20,8 @@
 | `requires` is empty | `empty recipe` before any action body, even with no ingredients |
 | Asset id above 2^64−1, on the claim or the chain row | `bad asset id` before any action body |
 | Asset id equal to 2^64−1 | accepted |
+| More than 20 ingredients (or required templates) | `bad asset batch` before any action body |
+| Exactly 20 ingredients | accepted |
 | Burn disposition without burnable ingredient rows | `not chain sourced` |
 | Treasury disposition | unsent transfer; burnable rows are not required |
 

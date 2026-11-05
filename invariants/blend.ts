@@ -2,7 +2,7 @@
  * Simple NFT→NFT blend (educational).
  * Template-exact ingredients; owner must match; inputs burned or sent to treasury.
  * Does not mint on-chain — returns an unsent mintasset body and unsent input actions.
- * Minter rights and output template supply come from chain rows, not from the client alone.
+ * Minter rights, output supply, and burnable ingredient templates come from chain rows.
  */
 
 export type Ingredient = {
@@ -15,6 +15,7 @@ export type Recipe = {
   id: string;
   /** Required template ids (multiset order-independent match by counts) */
   requires: readonly number[];
+  ingredientCollection: string;
   /** Output template to mint */
   outputsTemplateId: number;
   outputCollection: string;
@@ -163,9 +164,29 @@ function assertOutputTemplate(
 }
 
 /**
- * Validate craft: caller owns every ingredient; templates match recipe multiset exactly.
- * Minter rights and output template supply require chain rows. Returns unsent mint/burn/treasury bodies.
- * Does not mint or burn on-chain. Issued supply is not incremented.
+ * Burn disposition only. One chain row per unique required template, all burnable, same collection.
+ * Treasury disposition does not call this.
+ */
+function assertBurnable(recipe: Recipe, rows: readonly ChainTemplate[] | null): void {
+  if (rows === null) throw new Error("not chain sourced");
+  const need = new Set(recipe.requires);
+  if (rows.length !== need.size) throw new Error("not chain sourced");
+  const seen = new Set<number>();
+  for (const row of rows) {
+    if (!row || row.source !== "chain") throw new Error("not chain sourced");
+    if (!Number.isInteger(row.template_id) || seen.has(row.template_id) || !need.has(row.template_id)) {
+      throw new Error("not chain sourced");
+    }
+    seen.add(row.template_id);
+    assertName(row.collection_name);
+    if (row.collection_name !== recipe.ingredientCollection) throw new Error("wrong collection");
+    if (row.burnable !== true) throw new Error("not burnable");
+  }
+}
+
+/**
+ * Validate craft. Minter, output supply, and (for burn) ingredient burnable rows are required.
+ * Returns unsent mint/burn/treasury bodies. Does not mint or burn on-chain.
  */
 export function craft(
   recipe: Recipe,
@@ -173,6 +194,7 @@ export function craft(
   caller: string,
   collection: ChainCollection | null,
   template: ChainTemplate | null,
+  ingredientTemplates: readonly ChainTemplate[] | null,
 ): CraftOk {
   assertName(caller);
   if (!recipe.id || recipe.id.length > 32) throw new Error("bad recipe id");
@@ -182,6 +204,7 @@ export function craft(
   if (!Number.isInteger(recipe.outputsTemplateId) || recipe.outputsTemplateId < 1) {
     throw new Error("bad output template");
   }
+  assertName(recipe.ingredientCollection);
   assertName(recipe.outputCollection);
   assertName(recipe.outputSchema);
   if (ingredients.length !== recipe.requires.length) {
@@ -206,9 +229,9 @@ export function craft(
 
   assertMinter(collection, recipe, caller);
   assertOutputTemplate(template, recipe);
+  if (recipe.inputDisposition === "burn") assertBurnable(recipe, ingredientTemplates);
 
   const consumedAssetIds = ingredients.map((i) => i.assetId);
-  // Stable order by asset id so the action list is deterministic.
   const ordered = [...consumedAssetIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
   let burns: UnsignedBurn[] | null = null;

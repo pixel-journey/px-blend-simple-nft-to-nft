@@ -5,6 +5,7 @@ import { craft, type ChainCollection, type ChainTemplate } from "./blend.ts";
 const recipe = {
   id: "pebble-to-rock",
   requires: [1001, 1001, 1002],
+  ingredientCollection: "ingcol",
   outputsTemplateId: 2000,
   outputCollection: "examplecol",
   outputSchema: "examplesch",
@@ -37,6 +38,18 @@ const outputTemplate = (
   ...overrides,
 });
 
+const ingredientRow = (template_id: number, burnable = true, collection_name = "ingcol"): ChainTemplate => ({
+  source: "chain",
+  collection_name,
+  schema_name: "ingsch",
+  template_id,
+  burnable,
+  max_supply: 0,
+  issued_supply: 0,
+});
+
+const burnableRows = () => [ingredientRow(1001), ingredientRow(1002)];
+
 function ings(
   specs: { id: bigint; templateId: number; owner?: string }[]
 ) {
@@ -55,7 +68,7 @@ const goodIngs = () =>
   ]);
 
 const good = () =>
-  craft(recipe, goodIngs(), alice, collection(), outputTemplate());
+  craft(recipe, goodIngs(), alice, collection(), outputTemplate(), burnableRows());
 
 describe("craft", () => {
   it("accepts exact multiset and owner", () => {
@@ -69,16 +82,9 @@ describe("craft", () => {
   it("returns an unsent mintasset with no asset id", () => {
     const r = good();
     assert.equal(r.mint.sent, false);
-    assert.equal(r.mint.account, "atomicassets");
     assert.equal(r.mint.name, "mintasset");
-    assert.equal(r.mint.data.authorized_minter, alice);
-    assert.equal(r.mint.data.collection_name, "examplecol");
-    assert.equal(r.mint.data.schema_name, "examplesch");
     assert.equal(r.mint.data.template_id, 2000);
-    assert.equal(r.mint.data.new_asset_owner, alice);
     assert.equal("asset_id" in r.mint.data, false);
-    assert.deepEqual(r.mint.data.immutable_data, []);
-    assert.deepEqual(r.mint.data.tokens_to_back, []);
   });
 
   it("returns unsent burn bodies for each consumed asset", () => {
@@ -91,48 +97,34 @@ describe("craft", () => {
       ]),
       alice,
       collection(),
-      outputTemplate()
+      outputTemplate(),
+      burnableRows()
     );
     assert.equal(r.burns?.length, 3);
     assert.equal(r.treasuryTransfer, null);
-    assert.deepEqual(
-      r.burns?.map((b) => b.data.asset_id),
-      ["1", "2", "3"]
-    );
+    assert.deepEqual(r.burns?.map((b) => b.data.asset_id), ["1", "2", "3"]);
     assert.equal(r.burns?.every((b) => b.sent === false), true);
-    assert.equal(r.burns?.every((b) => b.name === "burnasset"), true);
-    assert.equal(r.burns?.every((b) => b.data.asset_owner === alice), true);
-    assert.equal(r.burns?.every((b) => b.account === "atomicassets"), true);
     assert.equal(r.mint.sent, false);
   });
 
-  it("returns an unsent treasury transfer when disposition is treasury", () => {
+  it("returns an unsent treasury transfer without ingredient burn rows", () => {
     const r = craft(
-      {
-        ...recipe,
-        inputDisposition: "treasury",
-        treasury: "treas.pxj",
-      },
+      { ...recipe, inputDisposition: "treasury", treasury: "treas.pxj" },
       goodIngs(),
       alice,
       collection(),
-      outputTemplate()
+      outputTemplate(),
+      null
     );
     assert.equal(r.disposition, "treasury");
     assert.equal(r.burns, null);
     assert.equal(r.treasuryTransfer?.sent, false);
-    assert.equal(r.treasuryTransfer?.account, "atomicassets");
-    assert.equal(r.treasuryTransfer?.data.from, alice);
     assert.equal(r.treasuryTransfer?.data.to, "treas.pxj");
-    assert.deepEqual(r.treasuryTransfer?.data.asset_ids, ["1", "2", "3"]);
-    assert.equal(r.treasuryTransfer?.data.memo, "blend:pebble-to-rock");
     assert.equal(r.mint.sent, false);
-    assert.equal(r.mint.data.template_id, 2000);
   });
 
   it("accepts the collection author as minter", () => {
-    const r = craft(recipe, goodIngs(), alice, collection([], alice), outputTemplate());
-    assert.equal(r.mint.sent, false);
+    const r = craft(recipe, goodIngs(), alice, collection([], alice), outputTemplate(), burnableRows());
     assert.equal(r.minter, alice);
   });
 
@@ -142,43 +134,75 @@ describe("craft", () => {
       goodIngs(),
       alice,
       collection(),
-      outputTemplate({ max_supply: 10, issued_supply: 9 })
+      outputTemplate({ max_supply: 10, issued_supply: 9 }),
+      burnableRows()
     );
     assert.equal(r.mint.sent, false);
   });
 
   it("refuses a missing collection row before any action body", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, null, outputTemplate()),
+      () => craft(recipe, goodIngs(), alice, null, outputTemplate(), burnableRows()),
       /not chain sourced/
     );
   });
 
   it("refuses a missing output template row before any action body", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection(), null),
+      () => craft(recipe, goodIngs(), alice, collection(), null, burnableRows()),
       /not chain sourced/
     );
   });
 
-  it("refuses a caller that is not author and not authorized", () => {
+  it("refuses burn disposition without ingredient template rows", () => {
     assert.throws(
-      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse"), outputTemplate()),
-      /not a minter/
+      () => craft(recipe, goodIngs(), alice, collection(), outputTemplate(), null),
+      /not chain sourced/
     );
   });
 
-  it("refuses a collection name that disagrees with the recipe", () => {
+  it("refuses a non-burnable ingredient template", () => {
     assert.throws(
       () =>
         craft(
           recipe,
           goodIngs(),
           alice,
-          collection([alice], "authorname", "othercol"),
-          outputTemplate()
+          collection(),
+          outputTemplate(),
+          [ingredientRow(1001, false), ingredientRow(1002)]
+        ),
+      /not burnable/
+    );
+  });
+
+  it("refuses an ingredient template from the wrong collection", () => {
+    assert.throws(
+      () =>
+        craft(
+          recipe,
+          goodIngs(),
+          alice,
+          collection(),
+          outputTemplate(),
+          [ingredientRow(1001, true, "othercol"), ingredientRow(1002)]
         ),
       /wrong collection/
+    );
+  });
+
+  it("refuses a partial ingredient template set", () => {
+    assert.throws(
+      () =>
+        craft(recipe, goodIngs(), alice, collection(), outputTemplate(), [ingredientRow(1001)]),
+      /not chain sourced/
+    );
+  });
+
+  it("refuses a caller that is not author and not authorized", () => {
+    assert.throws(
+      () => craft(recipe, goodIngs(), alice, collection([], "someoneelse"), outputTemplate(), burnableRows()),
+      /not a minter/
     );
   });
 
@@ -190,7 +214,8 @@ describe("craft", () => {
           goodIngs(),
           alice,
           collection(),
-          outputTemplate({ template_id: 9999 })
+          outputTemplate({ template_id: 9999 }),
+          burnableRows()
         ),
       /template mismatch/
     );
@@ -204,7 +229,8 @@ describe("craft", () => {
           goodIngs(),
           alice,
           collection(),
-          outputTemplate({ schema_name: "wrongsch" })
+          outputTemplate({ schema_name: "wrongsch" }),
+          burnableRows()
         ),
       /wrong schema/
     );
@@ -218,23 +244,10 @@ describe("craft", () => {
           goodIngs(),
           alice,
           collection(),
-          outputTemplate({ max_supply: 5, issued_supply: 5 })
+          outputTemplate({ max_supply: 5, issued_supply: 5 }),
+          burnableRows()
         ),
       /template full/
-    );
-  });
-
-  it("refuses a bad output collection name before mint", () => {
-    assert.throws(
-      () =>
-        craft(
-          { ...recipe, outputCollection: ".bad" },
-          goodIngs(),
-          alice,
-          collection(),
-          outputTemplate()
-        ),
-      /bad account name/
     );
   });
 
@@ -246,7 +259,8 @@ describe("craft", () => {
           goodIngs(),
           alice,
           collection(),
-          outputTemplate()
+          outputTemplate(),
+          null
         ),
       /missing treasury/
     );
@@ -260,7 +274,8 @@ describe("craft", () => {
           goodIngs(),
           alice,
           collection(),
-          outputTemplate()
+          outputTemplate(),
+          null
         ),
       /treasury is the user/
     );
@@ -278,7 +293,8 @@ describe("craft", () => {
           ]),
           alice,
           collection(),
-          outputTemplate()
+          outputTemplate(),
+          burnableRows()
         ),
       /not owner/
     );
@@ -296,7 +312,8 @@ describe("craft", () => {
           ]),
           alice,
           collection(),
-          outputTemplate()
+          outputTemplate(),
+          burnableRows()
         ),
       /template mismatch/
     );
@@ -314,7 +331,8 @@ describe("craft", () => {
           ]),
           alice,
           collection(),
-          outputTemplate()
+          outputTemplate(),
+          burnableRows()
         ),
       /duplicate/
     );

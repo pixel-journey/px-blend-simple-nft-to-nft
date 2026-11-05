@@ -4,7 +4,7 @@
 > **Quest:** 046 — simple NFT→NFT blend  
 > **Vault:** [px-contract-examples-vault](https://github.com/pixel-journey/px-contract-examples-vault)
 
-**One-sentence goal:** Teach a **template-exact** craft gate with **chain collection and output-template rows**: ownership, multiset, minter rights, and supply room must all pass before unsent mint and input actions are returned. It does not mint.
+**One-sentence goal:** Teach a **template-exact** craft gate with chain rows for **minter**, **output supply**, and **burnable ingredients** (burn disposition only). Unsent mint and input actions are returned. It does not mint.
 
 **Real code:** `npm test`. **No** AtomicAssets call, **no** wasm, **no** custody transfer.
 
@@ -12,29 +12,24 @@
 
 | Rule | Result |
 | --- | --- |
-| Exact templates + owner + chain minter + open output template | `ok`, unsent `mintasset`, disposition actions |
-| Missing collection or output template row | `not chain sourced` before any action body |
-| Caller neither author nor authorized | `not a minter` |
-| Wrong collection / schema / template id on the output row | refused |
-| `issued_supply >= max_supply` (when max_supply ≠ 0) | `template full` |
-| `max_supply` 0 | unlimited; accepted |
-| Burn / treasury disposition | unsent action bodies only |
+| Exact templates + owner + minter + open output + burnable ingredient rows | `ok`, unsent `mintasset` and `burnasset` |
+| Burn disposition without ingredient template rows | `not chain sourced` before any action body |
+| Ingredient `burnable` is not true | `not burnable` |
+| Ingredient row from the wrong collection | `wrong collection` |
+| Partial unique template set | `not chain sourced` |
+| Treasury disposition | unsent transfer; ingredient burn rows are not required |
+| Missing collection or output template / full template | refused before any action body |
 
 Chain rows are arguments with `source: "chain"`. Omitting them is not a live table read. Issued supply is not incremented.
 
 ## Live path, not shipped
 
 ```
-owned assets + recipe + collection + output template
+owned assets + recipe + collection + output template + burnable rows
     → craft() unsent mint + input actions   [tested]
     → signed burn or treasury transfer      [not in this repo]
     → signed mint of outputsTemplateId      [not in this repo]
 ```
-
-## Related
-
-- `px-blend-hybrid-ft-plus-nft` — same idea plus a token leg and burnable ingredient rows
-- Vault index: `px-contract-examples-vault`
 
 ## Run
 

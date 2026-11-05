@@ -67,7 +67,6 @@ const goodIngs = () =>
     { id: 3n, templateId: 1002 },
   ]);
 
-
 const chainAssets = (
   list: { assetId: bigint; templateId: number; owner: string }[] = goodIngs(),
 ): ChainAsset[] =>
@@ -232,7 +231,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate({ template_id: 9999 }),
-          burnableRows(), chainAssets()
+          burnableRows(),
+          chainAssets()
         ),
       /template mismatch/
     );
@@ -247,7 +247,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate({ schema_name: "wrongsch" }),
-          burnableRows(), chainAssets()
+          burnableRows(),
+          chainAssets()
         ),
       /wrong schema/
     );
@@ -262,7 +263,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate({ max_supply: 5, issued_supply: 5 }),
-          burnableRows(), chainAssets()
+          burnableRows(),
+          chainAssets()
         ),
       /template full/
     );
@@ -313,7 +315,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          burnableRows(), chainAssets()
+          burnableRows(),
+          chainAssets()
         ),
       /not owner/
     );
@@ -332,7 +335,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          burnableRows(), chainAssets()
+          burnableRows(),
+          chainAssets()
         ),
       /template mismatch/
     );
@@ -351,7 +355,8 @@ describe("craft", () => {
           alice,
           collection(),
           outputTemplate(),
-          burnableRows(), chainAssets()
+          burnableRows(),
+          chainAssets()
         ),
       /duplicate/
     );
@@ -487,4 +492,41 @@ describe("craft", () => {
     );
   });
 
+  it("accepts a batch of exactly 20 ingredients", () => {
+    const requires = Array.from({ length: 20 }, () => 1001);
+    const list = ings(
+      requires.map((templateId, i) => ({ id: BigInt(i + 1), templateId }))
+    );
+    const r = craft(
+      { ...recipe, requires },
+      list,
+      alice,
+      collection(),
+      outputTemplate(),
+      [ingredientRow(1001)],
+      chainAssets(list)
+    );
+    assert.equal(r.burns?.length, 20);
+    assert.equal(r.mint.sent, false);
+  });
+
+  it("refuses more than 20 ingredients before any action body", () => {
+    const requires = Array.from({ length: 21 }, () => 1001);
+    const list = ings(
+      requires.map((templateId, i) => ({ id: BigInt(i + 1), templateId }))
+    );
+    assert.throws(
+      () =>
+        craft(
+          { ...recipe, requires },
+          list,
+          alice,
+          collection(),
+          outputTemplate(),
+          [ingredientRow(1001)],
+          chainAssets(list)
+        ),
+      /bad asset batch/
+    );
+  });
 });

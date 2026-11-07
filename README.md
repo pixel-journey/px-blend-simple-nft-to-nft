@@ -27,6 +27,17 @@
 
 Chain rows are arguments. Omitting them is not a live `atomicassets::assets` read. Issued supply is not incremented.
 
+## AtomicAssets v2
+
+`mint.tokens_to_back` is always `[]`. v2 rejects a non-empty vector (`Native backing has been deprecated`). Do not fill it to "add value" to the output. A burn here is `atomicassets::burnasset` of the ingredient. It is not the v1 path that releases `backed_tokens`, and this lab does not model `backed_tokens` at all.
+
+v2 also rejects creating a template that is both non-transferable and non-burnable. Burn disposition already requires `burnable: true` on the ingredient template row. A non-burnable ingredient cannot take the burn path. Treasury disposition is an unsent `transfer` instead.
+
+Custody is that transfer, or the burn. There is no `holders` table to park the NFT in. v2 removed that primitive.
+
+Map: [ATOMICASSETS-V2.md](https://github.com/pixel-journey/wax-ecosystem-blueprint-catalog/blob/main/ATOMICASSETS-V2.md).
+
+
 ## Live path, not shipped
 
 ```

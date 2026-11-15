@@ -1,30 +1,44 @@
-# Worked examples — template-exact blend
+# Worked examples — template-exact NFT blend
 
-Ownership and burnability come from **chain rows**, not client-supplied owner fields.
+Recipe under test: requires templates **1001, 1001, 1002** → mint template **2000**. Collection `examplecol` / schema `examplesch`. Ingredients from `ingcol`.
 
-## Example A — happy path (burn disposition)
+## Happy path (burn)
 
-Ingredients match required templates, assets owned by blender, templates burnable, output template open, minter authorized → `ok` with **unsent** `mintasset` + `burnasset` bodies.
+Three chain assets owned by alice, matching templates, burnable ingredient rows, minter authorized or author:
 
-## Example B — treasury disposition
+- `consumedAssetIds` length **3**
+- unsent **burnasset** ×3 then unsent **mintasset** (actions length 4)
+- burns ordered by asset id strings `1`, `2`, `3` when offered out of order
+- mint has **no** `asset_id`; `tokens_to_back` is `[]`
 
-Same gate, but inputs transfer to treasury instead of burn → unsent **transfer** bodies; burnable flag not required.
+## Treasury disposition
 
-## Example C — refused before any action body
+`inputDisposition: "treasury"`, `treasury: "treas.pxj"`:
 
-| Failure | Result |
+- `burns` null; one unsent **transfer** then mint (actions length 2)
+- ingredient burnable rows not required
+- missing treasury / treasury == caller refused
+
+## Composition desk
+
+Pure `craft()` accepts the **same** ids twice (no persisted state).
+
+Desk records consumed ids: second craft of `10,20` → `asset already consumed`. Fresh ids `11,12` then `21,22` → desk.consumed size **4**.
+
+## Supply and auth
+
+| Case | Result |
 | --- | --- |
-| Wrong template id | refused |
-| Asset not owned by blender (chain row) | refused |
-| Missing asset row | refused |
-| Burn disposition + non-burnable template | refused |
-| Output supply closed / maxed | refused |
-| Minter not authorized | refused |
+| max_supply 10, issued 9 | ok |
+| max_supply 5, issued 5 | template full |
+| caller not author/authorized | not a minter |
+| output template id 9999 | template mismatch |
+| wrong schema | wrong schema |
 
-## Example D — sequential desk (composition)
+## Ingredient refusals (before any action body)
 
-`craft()` pure function returns `ok` twice with same ids. **Desk** records consumed ids and refuses `asset already consumed` on the second craft. Production must persist burns/transfers the same way.
+Non-owner (claim or chain row), wrong collection, template mismatch, duplicate asset id, empty recipe, batch **21** (cap 20), asset id > uint64 max, missing chain rows, non-burnable on burn path.
 
-## Example E — AtomicAssets v2
+Batch of exactly **20** ingredients accepted. Asset id at uint64 max accepted.
 
-`mint.tokens_to_back` is always `[]`. See [ATOMICASSETS-V2.md](https://github.com/pixel-journey/wax-ecosystem-blueprint-catalog/blob/main/ATOMICASSETS-V2.md).
+**TypeScript tests are the rule**; production must persist burns like the desk.

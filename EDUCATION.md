@@ -1,40 +1,54 @@
 # Education — template-exact NFT craft
 
-> **Rung:** `npm test` passes. `craft` returns a mint **intent**. It does not burn, transfer, or mint.  
-> **The test is the rule.**
+> **Rung:** `npm test` passes. `craft` returns **unsent** AtomicAssets action bodies. It does not broadcast.  
+> **The test is the rule.** Ownership and burnability come from **chain rows**, not client claims alone.
 
-## What you should be able to do
+## Learning outcomes
 
 | Level | After this file |
 | --- | --- |
-| Beginner | Match a recipe that needs two of one template and one of another |
-| Intermediate | Say why asset ids are a set, and why one bob-owned ingredient fails the whole craft |
-| Masterclass | List the AtomicAssets actions this intent still has to become |
+| Beginner | Match a multiset recipe (two of template A, one of B) and list what a success object contains |
+| Intermediate | Explain burn vs treasury disposition, action order, and why client `owner` is not enough |
+| Masterclass | Describe the composition desk, supply races, and what production still must add |
+
+Related stack: [wildcard slots](https://github.com/pixel-journey/px-blend-schema-wildcard-recipes) · [hybrid FT+NFT](https://github.com/pixel-journey/px-blend-hybrid-ft-plus-nft) · [memo `blend:`](https://github.com/pixel-journey/px-memo-action-router).
+
+Official: [atomicassets-contract](https://github.com/pinknetworkx/atomicassets-contract) · [WAX AtomicAssets how-to](https://docs.wax.io/build/tutorials/howto_atomicassets).
 
 ---
 
 ## Beginner — one scene
 
-Recipe `pebble-to-rock` wants template ids `1001`, `1001`, and `1002`. The output template is `2000`. Inputs are marked `burn`. Alice owns assets `1`, `2`, and `3` with those templates. `craft` returns:
+Recipe `pebble-to-rock` requires template ids **1001, 1001, 1002** (a **multiset**: counts matter, order of the array does not). Output template **2000**, disposition **burn**.
 
-| Field | Value the test checks |
+Alice owns three chain assets with those templates. `craft` succeeds when:
+
+1. Collection + output template + ingredient templates + asset rows are all `source: "chain"`.
+2. Each asset’s chain **owner** is the caller.
+3. Ingredient templates are **burnable** (burn path).
+4. Caller is collection **author** or in `authorized_accounts`.
+5. Output template has remaining supply (or unlimited `max_supply: 0`).
+
+Success includes:
+
+| Field | Test-backed meaning |
 | --- | --- |
 | `ok` | true |
 | `mintTemplateId` | 2000 |
-| `consumedAssetIds` length | 3 |
+| `consumedAssetIds` | three ids |
 | `disposition` | `burn` |
-
-If asset `2` is owned by `bob`, the call throws `not owner of ingredient`. If asset `3` is template `9999`, it throws `template mismatch`. If assets `1` and `1` are both submitted, it throws `duplicate asset`.
+| `actions` | three unsent `burnasset` then one unsent `mintasset` |
+| `mint.data.tokens_to_back` | always `[]` (AtomicAssets v2) |
 
 ### Words
 
 | Word | Meaning here |
 | --- | --- |
-| Recipe | Id, required template ids, output template, disposition |
-| Multiset | Counts matter, order does not. Two `1001` is not one `1001` |
-| Ingredient | An asset id, a template id, and an owner string |
-| Disposition | `burn` or `treasury` on the recipe. The test uses `burn` only |
-| Mint intent | A return value naming the output template and the minter. Not a transaction |
+| Multiset | Two `1001` is not one `1001`; maps of template→count must match |
+| Chain row | Asset / template / collection object with `source: "chain"` |
+| Disposition | `burn` (destroy inputs) or `treasury` (transfer inputs to a sink account) |
+| Unsent | Action body for teaching; `sent: false` — not broadcast |
+| Desk | Composition wrapper that records consumed asset ids across crafts |
 
 ### Predict, then run
 
@@ -42,59 +56,79 @@ If asset `2` is owned by `bob`, the call throws `not owner of ingredient`. If as
 npm test
 ```
 
-1. Can Alice craft if she owns the right templates but one asset id is repeated? (No.)
-2. Does the success result include a transaction id? (No. It includes consumed ids and a mint template.)
-3. Who is `minter` on success? (The caller, `alice`.)
+1. Same asset id twice → `duplicate`.
+2. Bob owns one ingredient on the chain row → `not the owner` / `not owner`.
+3. Does success include a transaction id? **No.**
+
+Numbers: [WORKED-EXAMPLES.md](WORKED-EXAMPLES.md).
 
 ---
 
-## Intermediate — counts, not positions
+## Intermediate — disposition, order, and gates
 
-`craft` first checks the caller name, recipe id length 1..32, disposition, output template ≥ 1, and `ingredients.length === requires.length`.
+### Burn path
 
-Then each ingredient: asset id is a positive `bigint`, ids are unique, owner name is well-formed, owner equals caller.
+Ingredient template rows are required and each matching template must be **burnable**. Actions: `burnasset` × N, then `mintasset`. Burns are ordered by the consumed id list the implementation produces (tests lock ids `1`,`2`,`3` after an out-of-order offer).
 
-Then it builds two maps of template id → count. They must be equal. `[1001, 1002, 1001]` against the recipe's `[1001, 1001, 1002]` matches. The tests pass ingredients in recipe order, so they do not lock the swapped order. The source does. Do not describe the test as an order test.
+### Treasury path
 
-A length mismatch throws `ingredient count mismatch` before the map compare. The tests do not call that path. A wrong template at the same length throws `template mismatch`, which is what the test locks.
+`inputDisposition: "treasury"` with `treasury: "treas.pxj"`:
 
-`inputDisposition: "treasury"` is a legal recipe value. No test crafts with it. The result would still only be an intent whose `disposition` field copies the recipe.
+- No ingredient burn rows required.
+- Actions: one unsent **transfer** of the asset bundle to treasury, then mint.
+- Missing treasury account or treasury == caller refused.
+
+### Auth and supply
+
+| Gate | Refusal |
+| --- | --- |
+| Caller not author and not authorized | not a minter |
+| Output template id ≠ recipe | template mismatch |
+| Wrong schema name | wrong schema |
+| issued_supply == max_supply (>0) | template full |
+| max_supply 10, issued 9 | allowed |
+
+### Batch bounds
+
+Exactly **20** ingredients accepted. **21** → `bad asset batch`. Asset id at uint64 max accepted; one past max refused before bodies.
 
 ### Attack → test
 
-| Attack | Naive code | This lab | Test |
-| --- | --- | --- | --- |
-| Use someone else's NFT in the bundle | You burn their asset | `not owner of ingredient` | `refuses non-owner ingredient` |
-| Substitute a lookalike template | You mint the prize | `template mismatch` | `refuses template mismatch` |
-| Pass the same asset twice | One NFT counts as two | `duplicate asset` | `refuses duplicate asset ids` |
-| Happy path | — | intent, not a mint | `accepts exact multiset and owner` |
+| Attack | Lab behavior |
+| --- | --- |
+| Client lies about owner | Chain asset row owner wins |
+| Lookalike template | template mismatch |
+| Same asset twice | duplicate |
+| Non-burnable on burn path | not burnable |
+| Replay same ids | pure craft allows; **desk** throws already consumed |
 
 ---
 
-## Masterclass — an intent is not a blend contract
+## Masterclass — intent vs production blend
 
-AtomicAssets will not read this return value. A real craft, in one transaction, still has to:
+AtomicAssets will not execute these objects by themselves. A live craft in **one transaction** still must:
 
-1. Load each asset row. Owner and template come from the table, not from action arguments. This lab trusts `Ingredient.owner` and `Ingredient.templateId`.
-2. `require_auth` of that owner. A string compare is what the test does.
-3. Burn (`burnasset`) or transfer to the treasury account, using action names that are constants.
-4. Mint the output to the caller only after the inputs are consumed, and only if this contract is an authorized minter for the collection.
-5. Refuse a recipe whose output template is not in the collection you think it is.
+1. Load asset / template / collection rows inside the contract (or trust only state written in the same tx).
+2. `require_auth` of the blender; verify mint authority on the collection.
+3. **Consume inputs before mint** (burn or transfer). If mint fails after burn, inputs are gone — design atomicity or an explicit refund path.
+4. Re-check template `issued_supply` / `max_supply` in the same action (supply race).
+5. Persist spent asset ids (the composition **desk** is the teaching stand-in).
 
-If step 3 succeeds and step 4 fails, you destroyed inputs with no prize. The intent object cannot roll that back because it never sent anything. Sketch the failure as one transaction or as an explicit two-step with a refund path. This repo has neither.
+Pure `craft()` is intentionally **stateless**: the same ids succeed twice. That is not a product bug in the pure function; it is why the desk exists and why production tables exist.
 
-`px-blend-hybrid-ft-plus-nft` is the neighbor that also debits a fungible amount. Do not assume this multiset check covers a token leg. It does not look at quantities at all.
+This lab does **not** handle FT legs, schema wildcards, or notify-based deposits. Those are sibling repos.
 
-### Exercise
+### Exercises
 
-1. Recipe requires `[1001, 1001]`. Ingredients are template `1001` twice, different asset ids, both owned by the caller. Does the length check pass? (Yes.) Does the map check pass? (Yes. Derived. The test uses three ingredients.)
-2. Same assets, but the caller argument is `bob` while owners are `alice`. Result? (`not owner of ingredient`.)
-3. Which of burn, treasury transfer, and mint does `npm test` perform? (None. It checks the intent's `disposition` string is `burn`.)
+1. Recipe `[1001, 1001]`, two different assets both template 1001, same owner — length and multiset both pass.  
+2. Caller `bob`, chain owners `alice` — refused.  
+3. List every action name in a successful burn craft — three `burnasset`, one `mintasset`, all `sent: false`.
 
 ---
 
 ## What this course will not teach
 
-- A live blend or a collection authority
-- That the treasury disposition has a test (it does not)
-- That ingredient order is what the test asserts (the source compares counts)
+- Live AtomicAssets RPC or broadcast
+- Collection setup / schema format design beyond ids used in tests
+- Hybrid FT debit (see hybrid lab)
+- Wildcard `template_id: -1` matching (see wildcard lab)

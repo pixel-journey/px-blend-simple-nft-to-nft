@@ -10,7 +10,7 @@
 | Unauthorized minter | refused |
 | Full output template | refused |
 | Duplicate asset id | refused |
-| Batch > 20 | refused |
+| Batch > **20** | refused |
 | Asset id > uint64 | refused |
 | Pure-function replay of ids | composition **desk** marks consumed |
 | Treasury == caller / missing | refused |
@@ -39,4 +39,12 @@ Match **template counts**, not a single asset id. Burns before mint in the retur
 
 ## Honesty limits
 
-No AtomicAssets RPC, no broadcast. Related: [wildcard](https://github.com/pixel-journey/px-blend-schema-wildcard-recipes) · [hybrid](https://github.com/pixel-journey/px-blend-hybrid-ft-plus-nft) · [atomicassets-contract](https://github.com/pinknetworkx/atomicassets-contract) · [docs.wax.io](https://docs.wax.io/build/tutorials/howto_atomicassets).
+No AtomicAssets RPC, no broadcast.
+
+| Sibling | Distinction |
+| --- | --- |
+| [wildcard recipes](https://github.com/pixel-journey/px-blend-schema-wildcard-recipes) | Exact-before-wildcard matching |
+| [hybrid FT+NFT](https://github.com/pixel-journey/px-blend-hybrid-ft-plus-nft) | Token + NFT inputs |
+| [memo router](https://github.com/pixel-journey/px-memo-action-router) | Structured memos |
+
+[atomicassets-contract](https://github.com/pinknetworkx/atomicassets-contract) · [docs.wax.io AtomicAssets](https://docs.wax.io/build/tutorials/howto_atomicassets).

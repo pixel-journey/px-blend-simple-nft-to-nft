@@ -8,6 +8,9 @@
 | [Blend tutorial](https://docs.wax.io/build/tutorials/howto_atomicassets/blend_nft) | Ingredient and output shape |
 | [WAX How-To AtomicAssets](https://docs.wax.io/build/tutorials/howto_atomicassets) | Standard overview |
 | [Minting NFTs](https://docs.wax.io/build/tutorials/howto_atomicassets/mint_nft) | Mint parameters |
+| [atomicassets-sdk](https://github.com/atomicassets/atomicassets-sdk) | Official TS client |
+| [atomic-knowledge](https://github.com/atomicassets/atomic-knowledge) | Skills + network-before-action |
+| [wharfkit/skill](https://github.com/wharfkit/skill) | SessionKit if a host signs |
 | [docs.wax.io](https://docs.wax.io/) | Auth, RAM, notifications |
 
 ## Product facts locked by this lab
@@ -23,11 +26,16 @@
 
 Bodies stay unsent. `npm test` does not flip `sent`.
 
+## Portability
+
+Multiset match, burn-before-mint, and “memo is not auth” port to any Antelope deployment that hosts AtomicAssets-style mint/burn. Swap collection names, template ids, and chain endpoints. Do not assume WAX mainnet ABI equals WAX testnet V2.
+
 ## Pixel Journey
 
 | Source | Use |
 | --- | --- |
-| [ATOMICASSETS-V2.md](https://github.com/pixel-journey/wax-ecosystem-blueprint-catalog/blob/main/ATOMICASSETS-V2.md) | v2 notes, empty `tokens_to_back` |
+| [ANTELOPE-PORTABILITY.md](https://github.com/pixel-journey/px-contract-examples-vault/blob/main/docs/ANTELOPE-PORTABILITY.md) | Shared vs chain-local |
+| [AGENT-TOOLING.md](https://github.com/pixel-journey/px-contract-examples-vault/blob/main/docs/AGENT-TOOLING.md) | Skills vs MCPs |
 | [learning path](https://github.com/pixel-journey/px-contract-examples-vault/blob/main/docs/LEARNING-PATH.md) | Curriculum index |
 
 ## Related labs
